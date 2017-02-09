@@ -1,0 +1,15 @@
+class Credentials():
+    
+    client_id = ''
+    client_secret = ''
+    user_agent = ''
+    username = ''
+    password = ''
+
+class Parameters():
+
+    regex_search = ''
+    subreddits_to_search = ['learnprogramming','learnpython']
+    blacklisted_users = []
+    message = """Your message here"""
+    subject = "Your subject here"
