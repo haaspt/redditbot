@@ -1,4 +1,3 @@
-from __future__ import print_function
 import argparse
 import time
 import praw
@@ -88,7 +87,7 @@ def reply_to_posts(reddit_api, cursor):
         if not args.dryrun:
             message_user(user)
         cursor.execute("UPDATE valid_posts SET replied = 1 WHERE id = ?;", (post_id,))
-        cursor.execute("UPDATE users SET last_message_date = ? WHERE id = ?;", (int(time.time()), user.id))
+        cursor.execute("INSERT OR REPLACE INTO users (id, username, last_message_date) VALUES (?, ?, ?);", (user.id, user.name, int(time.time())))
 
 def message_user(user):
 
