@@ -11,6 +11,5 @@ class Parameters():
     regex_search = ''
     subreddits_to_search = ['learnprogramming','learnpython']
     blacklisted_users = []
-    message_wait_interval = 604800
     message = """Your message here"""
     subject = "Your subject here"

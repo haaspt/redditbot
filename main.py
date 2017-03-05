@@ -18,9 +18,9 @@ def db_init(cursor):
         cursor.execute("DROP TABLE valid_posts;")
             
     # Creates default tables if they don't already exist
-    cursor.execute("CREATE TABLE IF NOT EXISTS post_archive (id TEXT, timestamp INT, subreddit_id TEXT);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS valid_posts (id TEXT, username TEXT, user_id TEXT, timestamp INT, post_title TEXT, post_text TEXT, replied BOOL);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS users (id TEXT, username TEXT, last_message_date INT, blacklisted BOOL);")
+    cursor.execute("CREATE TABLE IF NOT EXISTS post_archive (id PRIMARY KEY, timestamp INT, subreddit_id TEXT);")
+    cursor.execute("CREATE TABLE IF NOT EXISTS valid_posts (id PRIMARY KEY, username TEXT, user_id TEXT, timestamp INT, post_title TEXT, post_text TEXT, replied BOOL);")
+    cursor.execute("CREATE TABLE IF NOT EXISTS users (id PRIMARY KEY, username TEXT, last_message_date INT, blacklisted BOOL);")
 
 def submission_search(subreddit, regex_pattern, cursor):
 
@@ -51,7 +51,7 @@ def submission_search(subreddit, regex_pattern, cursor):
             new_submission_counter += 1
             cursor.execute('INSERT INTO post_archive (id, timestamp, subreddit_id) VALUES (?, ?, ?);',
                            (submission.id, submission.created, subreddit.id))
-            if regex_pattern.search(submission.title) is not None:
+            if regex_pattern.search(submission.title) is not None and submission.author is not None:
                 valid_post_counter += 1
                 logger.debug("Submission meets search criteria, adding to database")
                 cursor.execute('INSERT INTO valid_posts (id, username, user_id, timestamp, post_title, post_text, replied) VALUES (?, ?, ?, ?, ?, ?, ?);',
@@ -69,13 +69,13 @@ def blacklist_user(user, cursor):
 
     logger.debug("Blacklisting %s", user.name)
     # Inserts blacklisted username into DB, if it isn't already there
-    cursor.execute('INSERT INTO users (username, user_id, blacklisted) SELECT (?, ?, 1) EXCEPT SELECT username FROM users WHERE username = ?;',(user.name, user.id))
+    cursor.execute('INSERT OR IGNORE INTO users (username, id, blacklisted) VALUES (?, ?, 1);',(user.name, user.id))
 
 
 def reply_to_posts(reddit_api, cursor):
 
-    # Selects Redditor info from valid_posts, checking that the post was not already replied to and the user isn't blacklisted
-    cursor.execute("SELECT id, username, user_id FROM valid_posts WHERE replied = 0 AND username NOT IN (SELECT username FROM users WHERE blacklisted = 1);")
+    # Selects Redditor info from valid_posts, checking that the post or user weren't already replied to
+    cursor.execute("SELECT id, username, user_id FROM valid_posts WHERE replied = 0 AND username NOT IN (SELECT username FROM users);")
     posts_to_reply_to = cursor.fetchall()
     logger.info("Replying to %d posts", len(posts_to_reply_to))
     
@@ -86,11 +86,12 @@ def reply_to_posts(reddit_api, cursor):
         user = reddit_api.redditor(username)
         logger.info("Replying to %s", user.name)
         if not args.dryrun:
-            # Check when the user was last messaged, only message if greater than 1 week ago
-            last_message_time = user_last_messaged(user.id, cursor)
-            if time.time() >= last_message_time + Parameters.message_wait_interval:
+            # Checks if a user was already messaged
+            user_already_messaged = user_already_messaged(user.id, cursor)
+            if not user_already_messaged:
                 message_user(user)
             else:
+                logger.info("User %d already messaged, skipping", user.name)
                 continue
         cursor.execute("UPDATE valid_posts SET replied = 1 WHERE id = ?;", (post_id,))
         cursor.execute("INSERT OR REPLACE INTO users (id, username, last_message_date) VALUES (?, ?, ?);", (user.id, user.name, int(time.time())))
@@ -104,16 +105,16 @@ def message_user(user):
     logger.debug("Redditor %s sucessfully messaged", user.name)
 
 
-def user_last_messaged(user_id, cursor):
+def user_already_messaged(user_id, cursor):
 
     cursor.execute('SELECT last_message_date FROM users WHERE id = ?;' (user_id))
     result = cursor.fetchone()
     if result is None:
-        last_message_time = 0.0
+        already_messaged = False
     else:
-        last_message_time = result[0]
+        already_messaged = True
 
-    return last_message_time
+    return already_messaged
 
 def main():
 
